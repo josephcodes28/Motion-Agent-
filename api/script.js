@@ -1,6 +1,6 @@
 // Rename this file to api/script.js in your GitHub repo.
 // Uses Google's free Gemini API key. In Vercel, add an environment variable named GEMINI_API_KEY.
-// Optional: add GEMINI_MODEL if you want to use a different model (default: gemini-2.5-flash).
+// Optional: add GEMINI_MODEL if you want to use a different model (default: gemini-3.8-flash).
 
 const SHAPES = {
   quote: {
@@ -22,7 +22,7 @@ module.exports = async (req, res) => {
 
   const key = process.env.GEMINI_API_KEY;
   if (!key) return res.status(500).json({ error: 'GEMINI_API_KEY is not set in Vercel.' });
-  const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+  const model = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
 
   const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
   const topic = String(body.topic || '').slice(0, 300).trim();
