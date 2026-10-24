@@ -25,6 +25,8 @@
   .row button.primary{background:var(--acc);border-color:var(--acc);color:#fff}
   button:disabled{opacity:.6}
   button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{outline:3px solid #b6a6ff;outline-offset:2px}
+  .full{width:100%;margin-top:8px;padding:14px;border-radius:10px;border:1px solid var(--line);background:var(--panel);color:var(--fg);font:inherit;font-weight:600}
+  .full:focus-visible,#ai:focus-visible,#speak:focus-visible{outline:3px solid #b6a6ff;outline-offset:2px}
   .note{color:var(--muted);font-size:13px;margin-top:14px}
 </style>
 </head>
@@ -35,16 +37,35 @@
 
 <div class="tabs" id="tabs" role="group" aria-label="Template"></div>
 
+<label for="topic">What is the video about?</label>
+<input id="topic" placeholder="Example: 3 tips to get more barbershop customers">
+<div class="row">
+  <button id="ai" class="primary">Write script with AI</button>
+  <button id="speak">Play voiceover</button>
+</div>
+<p class="note" id="aiMsg" role="status"></p>
+
 <div id="fields"></div>
 
 <label for="theme">Color theme</label>
 <select id="theme"></select>
 
+<label for="voiceSel">Voice for the MP4 version</label>
+<select id="voiceSel">
+  <option value="en-US-AriaNeural">Aria (US woman)</option>
+  <option value="en-US-GuyNeural">Guy (US man)</option>
+  <option value="en-US-JennyNeural">Jenny (US woman, calm)</option>
+  <option value="en-GB-RyanNeural">Ryan (UK man)</option>
+  <option value="en-GB-SoniaNeural">Sonia (UK woman)</option>
+</select>
+
 <div class="row">
   <button id="replay">Replay</button>
   <button id="rec" class="primary">Record and download</button>
 </div>
-<p class="note">Videos are 8 seconds, vertical (9:16), saved as a file you can upload to YouTube Shorts, TikTok, or Instagram.</p>
+<button id="copyJson" class="full">Copy code for MP4 with voice</button>
+<p class="note" id="copyMsg" role="status"></p>
+<p class="note">Record and download makes a quick 8-second silent preview video. For the full MP4 with voiceover, tap the copy button and paste it into your GitHub render workflow.</p>
 
 <script>
 const W = 720, H = 1280, DUR = 8;
@@ -213,6 +234,7 @@ const templates = {
 };
 const state = {}; for (const k in templates) state[k] = templates[k].fields.map(f => f[1]);
 let cur = 'quote', themeKey = 'night';
+const vo = { quote: '', explainer: '', promo: '' };
 
 const tabs = document.getElementById('tabs'), fieldsEl = document.getElementById('fields');
 const themeSel = document.getElementById('theme'), recBtn = document.getElementById('rec');
@@ -235,6 +257,10 @@ function buildFields() {
     inp.oninput = () => { state[cur][i] = inp.value; };
     fieldsEl.append(l, inp);
   });
+  const vl = document.createElement('label'); vl.htmlFor = 'vo'; vl.textContent = 'Voiceover (what the voice says)';
+  const vi = document.createElement('textarea'); vi.id = 'vo'; vi.value = vo[cur];
+  vi.oninput = () => { vo[cur] = vi.value; };
+  fieldsEl.append(vl, vi);
 }
 for (const k in themes) { const o = document.createElement('option'); o.value = k; o.textContent = themes[k].name; themeSel.appendChild(o); }
 themeSel.onchange = () => { themeKey = themeSel.value; };
@@ -275,6 +301,48 @@ function startRecording() {
 }
 function finishRecording() { if (rec && rec.state === 'recording') rec.stop(); }
 recBtn.onclick = startRecording;
+
+const aiBtn = document.getElementById('ai'), aiMsg = document.getElementById('aiMsg');
+const topicEl = document.getElementById('topic'), voiceSel = document.getElementById('voiceSel');
+const copyMsg = document.getElementById('copyMsg');
+
+aiBtn.onclick = async () => {
+  const topic = topicEl.value.trim();
+  if (!topic) { aiMsg.textContent = 'Type what the video is about first.'; return; }
+  aiBtn.disabled = true; aiMsg.textContent = 'Writing your script\u2026';
+  try {
+    const r = await fetch('/api/script', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ topic, template: cur })
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Request failed');
+    const n = templates[cur].fields.length;
+    const fields = Array.isArray(d.fields) ? d.fields.slice(0, n) : [];
+    while (fields.length < n) fields.push('');
+    state[cur] = fields.map(String); vo[cur] = String(d.voiceover || '');
+    buildFields(); restart();
+    aiMsg.textContent = 'Done. You can edit any line.';
+  } catch (e) {
+    aiMsg.textContent = 'Could not write the script: ' + e.message;
+  }
+  aiBtn.disabled = false;
+};
+
+document.getElementById('speak').onclick = () => {
+  if (!vo[cur].trim()) { aiMsg.textContent = 'There is no voiceover text yet.'; return; }
+  if (!('speechSynthesis' in window)) { aiMsg.textContent = 'This browser cannot play voice previews.'; return; }
+  speechSynthesis.cancel();
+  speechSynthesis.speak(new SpeechSynthesisUtterance(vo[cur]));
+  restart();
+};
+
+document.getElementById('copyJson').onclick = () => {
+  const text = JSON.stringify({ template: cur, theme: themeKey, fields: state[cur], voiceover: vo[cur], voice: voiceSel.value });
+  const done = () => { copyMsg.textContent = 'Copied. Paste it into the Render video workflow on GitHub.'; };
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done).catch(() => prompt('Copy this code:', text));
+  else prompt('Copy this code:', text);
+};
 
 buildTabs(); buildFields(); requestAnimationFrame(frame);
 </script>
