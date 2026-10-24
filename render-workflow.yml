@@ -1,0 +1,66 @@
+# Save this file in your repo as .github/workflows/render.yml
+name: Render video
+
+on:
+  workflow_dispatch:
+    inputs:
+      script_json:
+        description: Paste the code copied from Motion Studio
+        required: true
+        type: string
+
+jobs:
+  render:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install system libraries for Chrome
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libnss3 libdbus-1-3 libatk1.0-0 libatk-bridge2.0-0 libgbm-dev libasound2 libxrandr2 libxkbcommon-x11-0 libxfixes3 libxcomposite1 libxdamage1 libcups2 || true
+
+      - name: Install packages
+        run: |
+          npm install --no-audit --no-fund
+          pip install edge-tts
+
+      - name: Make props and voiceover
+        env:
+          SCRIPT_JSON: ${{ inputs.script_json }}
+        run: |
+          mkdir -p public out
+          printf '%s' "$SCRIPT_JSON" > props.json
+          python - <<'PY'
+          import json, asyncio
+          p = json.load(open('props.json'))
+          text = (p.get('voiceover') or '').strip()
+          p['hasVoice'] = False
+          if text:
+              try:
+                  import edge_tts
+                  async def go():
+                      await edge_tts.Communicate(text, p.get('voice') or 'en-US-AriaNeural').save('public/voice.mp3')
+                  asyncio.run(go())
+                  p['hasVoice'] = True
+              except Exception as e:
+                  print('Voiceover failed, rendering without voice:', e)
+          json.dump(p, open('props.json', 'w'))
+          PY
+
+      - name: Render MP4
+        run: npx remotion render index.jsx Video out/video.mp4 --props=props.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: video
+          path: out/video.mp4
